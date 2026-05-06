@@ -157,7 +157,9 @@ def monte_carlo_projection(trades, n_simulations=10000, n_future_trades=100):
 
 # Load data
 def read_db_directly():
-    config = {'host': '80.225.228.224','username': 'ubuntu','private_key': r'D:\NIFTY_Options_21ema_strategy\21ema_strategy_v2_Current_Working_Dec2025\oracle_key\ssh-key-2025-12-20.key',}
+    ssh_private_key = st.secrets["ssh_private_key"]
+
+    config = {'host': '80.225.228.224','username': 'ubuntu','private_key': st.secrets["ssh_private_key"],}
     remote_db_path = '/home/ubuntu/final_trading_logs.db'    
     try:
         private_key = paramiko.RSAKey.from_private_key_file(config['private_key'])
