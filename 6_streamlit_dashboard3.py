@@ -13,6 +13,10 @@ import tempfile
 import os
 warnings.filterwarnings('ignore')
 
+
+import tempfile
+import os
+
 # Set page config
 st.set_page_config(
     page_title="Trading Dashboard",
@@ -159,7 +163,16 @@ def monte_carlo_projection(trades, n_simulations=10000, n_future_trades=100):
 def read_db_directly():
     ssh_private_key = st.secrets["ssh_private_key"]
 
-    config = {'host': '80.225.228.224','username': 'ubuntu','private_key': st.secrets["ssh_private_key"],}
+    # Write key content to temporary file
+    with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key') as temp_key_file:
+        temp_key_file.write(ssh_private_key)
+        temp_key_path = temp_key_file.name
+        
+    config = {'host': '80.225.228.224','username': 'ubuntu','private_key': temp_key_path,}
+
+    # config = {'host': '80.225.228.224','username': 'ubuntu','private_key': r'D:\NIFTY_Options_21ema_strategy\21ema_strategy_v2_Current_Working_Dec2025\oracle_key\ssh-key-2025-12-20.key',}
+
+
     remote_db_path = '/home/ubuntu/final_trading_logs.db'    
     try:
         private_key = paramiko.RSAKey.from_private_key_file(config['private_key'])
