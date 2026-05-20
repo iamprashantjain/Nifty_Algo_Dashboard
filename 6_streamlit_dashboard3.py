@@ -272,6 +272,18 @@ if fd.empty:
     st.warning("No trades in selected filter.")
     st.stop()
 
+
+# KEEP ONLY FIRST TRADE OF EACH DAY
+fd = (
+    fd.sort_values(['entry_date', 'entry_time'])
+      .groupby('entry_date', as_index=False)
+      .first()
+)
+
+# Optional: reset index
+fd = fd.reset_index(drop=True)
+
+
 # Calculate daily aggregates
 daily = fd.groupby('entry_date')['net_pnl'].sum().sort_index()
 equity_curve = INITIAL_CAPITAL + daily.cumsum()
