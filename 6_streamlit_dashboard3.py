@@ -273,15 +273,15 @@ if fd.empty:
     st.stop()
 
 
-# KEEP ONLY FIRST TRADE OF EACH DAY
-fd = (
-    fd.sort_values(['entry_date', 'entry_time'])
-      .groupby('entry_date', as_index=False)
-      .first()
-)
+# # KEEP ONLY FIRST TRADE OF EACH DAY
+# fd = (
+#     fd.sort_values(['entry_date', 'entry_time'])
+#       .groupby('entry_date', as_index=False)
+#       .first()
+# )
 
-# Optional: reset index
-fd = fd.reset_index(drop=True)
+# # Optional: reset index
+# fd = fd.reset_index(drop=True)
 
 
 # Calculate daily aggregates
