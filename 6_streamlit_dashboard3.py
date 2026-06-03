@@ -640,11 +640,14 @@ def max_consecutive_losses(returns):
             current_streak = 0
     return max_streak
 
+
 def calculate_sharpe_ratio(returns, rf_rate=0.05):
+    """returns: daily or trade returns as decimals"""
     if len(returns) < 2 or returns.std() == 0:
         return 0
     excess_returns = returns - rf_rate/252
     return np.sqrt(252) * excess_returns.mean() / returns.std()
+
 
 def calculate_sortino_ratio(returns, rf_rate=0.05):
     if len(returns) < 2:
@@ -652,14 +655,23 @@ def calculate_sortino_ratio(returns, rf_rate=0.05):
     excess_returns = returns - rf_rate/252
     downside_returns = returns[returns < 0]
     if len(downside_returns) == 0 or downside_returns.std() == 0:
-        return 0
+        return 0 if excess_returns.mean() <= 0 else np.inf
     return np.sqrt(252) * excess_returns.mean() / downside_returns.std()
 
-def calculate_calmar_ratio(returns, max_dd):
-    if max_dd == 0:
+def calculate_calmar_ratio(returns, max_drawdown_decimal):
+    """max_drawdown_decimal should be negative (e.g., -0.05)"""
+    if max_drawdown_decimal == 0:
         return 0
     annual_return = returns.mean() * 252
-    return annual_return / abs(max_dd)
+    return annual_return / abs(max_drawdown_decimal)
+
+
+def calculate_max_drawdown(equity_curve):
+    """Calculate maximum drawdown from equity curve"""
+    running_max = equity_curve.expanding().max()
+    drawdown = (equity_curve - running_max) / running_max  # as decimal
+    max_dd = drawdown.min()
+    return max_dd, max_dd * 100  # returns (decimal, percentage)
 
 def calculate_win_loss_metrics(wins, losses):
     avg_win = wins.mean() if len(wins) > 0 else 0
@@ -668,9 +680,11 @@ def calculate_win_loss_metrics(wins, losses):
     return avg_win, avg_loss, win_loss_ratio
 
 def calculate_ulcer_index(equity_curve):
+    """equity_curve: cumulative P&L + initial capital"""
     running_max = equity_curve.expanding().max()
     drawdown_pct = (equity_curve - running_max) / running_max * 100
     return np.sqrt((drawdown_pct ** 2).mean())
+
 
 def calculate_var(returns, confidence=0.95):
     return np.percentile(returns, (1-confidence)*100)
