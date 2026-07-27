@@ -319,46 +319,6 @@ with st.sidebar:
         
         # Apply auto-refresh
         add_auto_refresh(refresh_seconds)
-    
-    # ============================================
-    # PERSISTENT NOTES BOX
-    # ============================================
-    st.markdown("---")
-    st.markdown("### 📝 Trading Notes")
-    
-    # File to store notes (local storage)
-    NOTES_FILE = "trading_notes.txt"
-    
-    # Load existing notes
-    if os.path.exists(NOTES_FILE):
-        with open(NOTES_FILE, "r") as f:
-            saved_notes = f.read()
-    else:
-        saved_notes = ""
-    
-    # Text area for notes
-    notes = st.text_area(
-        "Write your notes here (auto-saves to file):",
-        value=saved_notes,
-        height=200,
-        placeholder="📌 Daily observations...\n📌 What worked today...\n📌 What to improve...\n📌 Market conditions...\n📌 Emotional state during trades..."
-    )
-    
-    col_save1, col_save2 = st.columns([1, 1])
-    with col_save1:
-        if st.button("💾 Save Notes", use_container_width=True):
-            with open(NOTES_FILE, "w") as f:
-                f.write(notes)
-            st.toast("✅ Notes saved successfully!", icon="✅")
-    
-    with col_save2:
-        if st.button("🗑️ Clear Notes", use_container_width=True):
-            with open(NOTES_FILE, "w") as f:
-                f.write("")
-            st.toast("🗑️ Notes cleared!", icon="🗑️")
-            st.rerun()
-    
-    st.caption("💡 Notes are saved locally and will appear every time you open the dashboard.")
 
 # ============================================
 # PROCESS FILTERED DATA
@@ -620,7 +580,3 @@ with col4:
     if 'duration_min' in fd.columns:
         avg_hold = fd['duration_min'].mean()
         st.markdown(f"**Avg Hold Time:** {avg_hold:.1f} min")
-
-
-
-
