@@ -591,7 +591,7 @@ if 'exit_reason' in fd.columns:
 
 # Detailed Trade Log
 with st.expander("📋 Detailed Trade Log"):
-    display_cols = ['entry_time', 'symbol', 'option_type', 'quantity', 'option_entry_price', 'option_exit_price', 'gross_pnl', 'brokerage', 'stt', 'exchange_txn', 'gst', 'total_charges', 'net_pnl', 'duration_min', 'exit_reason']
+    display_cols = ['trade_id', 'symbol', 'option_type', 'quantity', 'option_entry_price', 'option_exit_price', 'net_pnl', 'duration_min', 'exit_reason']
     display_cols = [col for col in display_cols if col in fd.columns]
     log_df = fd[display_cols].copy()
     log_df['entry_time'] = log_df['entry_time'].dt.strftime('%Y-%m-%d %H:%M')
