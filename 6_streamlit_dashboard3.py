@@ -868,13 +868,15 @@ with st.sidebar:
     
     # --- NEW: Trade ID Range Filter ---
     st.markdown("### Trade ID Range")
+    
     trade_id_min = st.number_input(
-        "From Trade ID",
-        min_value=int(final_df['trade_id'].min()),
-        max_value=int(final_df['trade_id'].max()),
-        value=int(final_df['trade_id'].min()),
-        step=1
-    )
+	    "From Trade ID",
+	    min_value=1,  # Changed from int(final_df['trade_id'].min()) to 1
+	    max_value=int(final_df['trade_id'].max()),
+	    value=int(final_df['trade_id'].min()),
+	    step=1
+		)
+
     trade_id_max = st.number_input(
         "To Trade ID",
         min_value=int(final_df['trade_id'].min()),
@@ -882,8 +884,9 @@ with st.sidebar:
         value=int(final_df['trade_id'].max()),
         step=1
     )
-    # ----------------------------------
-    
+
+
+    # ----------------------------------    
     instruments = st.multiselect("Instrument", options=final_df['instrument'].unique(), default=final_df['instrument'].unique())
     option_types = st.multiselect("Option Type", options=['CE', 'PE'], default=['CE', 'PE'])
     
@@ -1203,5 +1206,3 @@ with col4:
     if 'duration_min' in fd.columns:
         avg_hold = fd['duration_min'].mean()
         st.markdown(f"**Avg Hold Time:** {avg_hold:.1f} min")
-
-
