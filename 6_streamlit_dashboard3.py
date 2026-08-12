@@ -2417,6 +2417,11 @@ avg_win, avg_loss, win_loss_ratio = calculate_win_loss_metrics(wins, losses)
 var_95 = calculate_var(daily_returns) * INITIAL_CAPITAL
 cvar_95 = calculate_cvar(daily_returns) * INITIAL_CAPITAL
 
+# Calculate win rate and profit factor for current filtered data
+trade_count = len(fd)
+win_rate = (len(wins) / trade_count * 100) if trade_count > 0 else 0
+profit_factor = wins.sum() / abs(losses.sum()) if len(losses) > 0 else np.inf
+
 # ============================================
 # MAIN DASHBOARD
 # ============================================
