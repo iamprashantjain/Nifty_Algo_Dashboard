@@ -1889,6 +1889,7 @@
 
 # ===========
 
+
 import calendar
 import streamlit as st
 import pandas as pd
@@ -2850,3 +2851,5 @@ with col4:
     if 'duration_min' in fd.columns:
         avg_hold = fd['duration_min'].mean()
         st.markdown(f"**Avg Hold Time:** {avg_hold:.1f} min")
+
+
