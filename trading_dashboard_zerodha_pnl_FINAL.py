@@ -455,178 +455,210 @@ cvar_95 = calculate_cvar(daily_returns) * INITIAL_CAPITAL
 # ZERODHA-STYLE DAILY P&L CALENDAR HEATMAP
 # ============================================
 def render_zerodha_pnl_heatmap(daily_pnl):
-    """Render a Zerodha-inspired month-by-month daily P&L calendar."""
+    """Render a Zerodha-style Monday-Friday monthly P&L heatmap using Plotly only.
+
+    Plotly is used instead of raw HTML so the dashboard works reliably across
+    Streamlit versions and cannot display the underlying markup as text.
+    """
     if daily_pnl is None or len(daily_pnl) == 0:
         st.info("No daily P&L available for the selected filters.")
         return
 
     s = pd.Series(daily_pnl, dtype="float64").copy()
-    s.index = pd.to_datetime(s.index)
-    s = s.groupby(s.index.normalize()).sum().sort_index()
+    s.index = pd.to_datetime(s.index).normalize()
+    s = s.groupby(s.index).sum().sort_index()
 
-    min_date = s.index.min()
-    max_date = s.index.max()
-    month_starts = pd.date_range(
-        min_date.to_period("M").start_time,
-        max_date.to_period("M").start_time,
-        freq="MS"
-    )
+    first_month = s.index.min().to_period("M").start_time
+    last_month = s.index.max().to_period("M").start_time
+    month_starts = pd.date_range(first_month, last_month, freq="MS")
 
-    max_abs_pnl = float(s.abs().max()) if len(s) else 0.0
+    max_abs = float(s.abs().max()) if len(s) else 0.0
 
-    def shade(value):
+    # Four intensity levels, matching the visual idea of Zerodha's calendar.
+    loss_colors = ["#ffc4c4", "#ff9e9e", "#ff6f6f", "#ef4444"]
+    profit_colors = ["#b8e6ba", "#8bd98f", "#5dcc63", "#22b832"]
+    empty_color = "#e5e7eb"
+
+    def cell_color(value):
         if pd.isna(value) or float(value) == 0:
-            return "#f3f4f6"
-        ratio = min(abs(float(value)) / max_abs_pnl, 1.0) if max_abs_pnl else 0.25
+            return empty_color
+        ratio = abs(float(value)) / max_abs if max_abs else 0.25
         level = min(4, max(1, int(np.ceil(ratio * 4))))
-        if value > 0:
-            return ["#dff5e1", "#a8e6ab", "#6ed879", "#2bc83f"][level - 1]
-        return ["#ffe0e0", "#ffb4b4", "#ff7777", "#ff3f3f"][level - 1]
+        return profit_colors[level - 1] if value > 0 else loss_colors[level - 1]
 
-    def format_pnl(value):
-        if value is None or pd.isna(value):
-            return ""
-        value = float(value)
-        sign = "+" if value > 0 else "-" if value < 0 else ""
-        return f"{sign}₹{abs(value):,.0f}"
-
-    month_html = []
+    # Build a continuous x-axis made of weekly columns, with a small gap
+    # between months. This closely matches the Zerodha monthly blocks.
+    xs, ys, values, colors, hover = [], [], [], [], []
+    month_annotations = []
+    month_boundaries = []
+    x_cursor = 0
 
     for month_start in month_starts:
-        year = month_start.year
-        month = month_start.month
-        weeks = calendar.monthcalendar(year, month)
+        weeks = calendar.monthcalendar(month_start.year, month_start.month)
+        n_weeks = len(weeks)
+        month_left = x_cursor
+        month_right = x_cursor + n_weeks - 1
 
-        while len(weeks) < 6:
-            weeks.append([0] * 7)
+        month_annotations.append({
+            "x": (month_left + month_right) / 2,
+            "y": 5.15,
+            "text": month_start.strftime("%b"),
+            "showarrow": False,
+            "font": {"size": 11, "color": "#9ca3af"},
+            "xanchor": "center",
+            "yanchor": "bottom"
+        })
+        month_boundaries.append((month_left - 0.5, month_right + 0.5))
 
-        cells = []
-        for week in weeks:
-            for day in week:
+        # Zerodha-style: Monday through Friday as rows, weeks left-to-right.
+        for weekday in range(5):
+            for week_idx, week in enumerate(weeks):
+                day = week[weekday]
+                x = x_cursor + week_idx
+                y = 4 - weekday
+
                 if day == 0:
-                    cells.append('<div class="zpnl-cell zpnl-empty"></div>')
-                    continue
-
-                dt = pd.Timestamp(year=year, month=month, day=day)
-                value = s.get(dt, np.nan)
-
-                if pd.isna(value):
-                    cells.append(
-                        f'<div class="zpnl-cell zpnl-no-trade" '
-                        f'title="{dt:%d %b %Y}: No trade"><span>{day}</span></div>'
-                    )
+                    value = np.nan
+                    color = "rgba(0,0,0,0)"
+                    text = ""
                 else:
-                    cells.append(
-                        f'<div class="zpnl-cell" style="background:{shade(value)}" '
-                        f'title="{dt:%d %b %Y}: {format_pnl(value)}">'
-                        f'<span>{day}</span></div>'
+                    dt = pd.Timestamp(
+                        year=month_start.year,
+                        month=month_start.month,
+                        day=day
                     )
+                    value = s.get(dt, np.nan)
+                    color = cell_color(value)
+                    if pd.isna(value):
+                        text = f"{dt:%d %b %Y}: No trade"
+                    else:
+                        sign = "+" if value > 0 else ""
+                        text = f"{dt:%d %b %Y}: {sign}₹{value:,.2f}"
 
-        month_html.append(
-            f"""
-            <div class="zpnl-month">
-                <div class="zpnl-month-title">{month_start:%b}</div>
-                <div class="zpnl-grid">{''.join(cells)}</div>
-            </div>
-            """
+                xs.append(x)
+                ys.append(y)
+                values.append(value)
+                colors.append(color)
+                hover.append(text)
+
+        x_cursor += n_weeks + 1  # one-column visual gap between months
+
+    fig = go.Figure()
+
+    # Invisible square-grid cells + coloured cells.
+    # A separate trace is used so Plotly renders actual square blocks.
+    fig.add_trace(go.Scatter(
+        x=xs,
+        y=ys,
+        mode="markers",
+        marker=dict(
+            symbol="square",
+            size=15,
+            color=colors,
+            line=dict(width=0)
+        ),
+        customdata=np.array(hover, dtype=object),
+        hovertemplate="%{customdata}<extra></extra>",
+        showlegend=False
+    ))
+
+    # Month separators, deliberately subtle.
+    for left, right in month_boundaries:
+        fig.add_vline(
+            x=left,
+            line_width=0.5,
+            line_color="rgba(128,128,128,0.08)",
+            layer="below"
+        )
+        fig.add_vline(
+            x=right,
+            line_width=0.5,
+            line_color="rgba(128,128,128,0.08)",
+            layer="below"
         )
 
-    legend = """
-        <div class="zpnl-legend">
-            <span class="zpnl-legend-label">Min. loss</span>
-            <span class="zpnl-legend-box" style="background:#ffe0e0"></span>
-            <span class="zpnl-legend-box" style="background:#ffb4b4"></span>
-            <span class="zpnl-legend-box" style="background:#ff7777"></span>
-            <span class="zpnl-legend-box" style="background:#ff3f3f"></span>
-            <span class="zpnl-legend-spacer"></span>
-            <span class="zpnl-legend-box" style="background:#dff5e1"></span>
-            <span class="zpnl-legend-box" style="background:#a8e6ab"></span>
-            <span class="zpnl-legend-box" style="background:#6ed879"></span>
-            <span class="zpnl-legend-box" style="background:#2bc83f"></span>
-            <span class="zpnl-legend-label">Max. profit</span>
-        </div>
-    """
+    # Legend squares at the bottom, matching Zerodha's Min loss -> Max loss
+    # and Min profit -> Max profit visual convention.
+    legend_x = []
+    legend_y = []
+    legend_colors = []
+    legend_labels = []
 
-    st.markdown(
-        """
-        <style>
-        .zpnl-wrap {
-            width: 100%;
-            overflow-x: auto;
-            padding: 4px 0 10px 0;
+    lx = max(x_cursor - 9, 0)
+    for i, c in enumerate(loss_colors):
+        legend_x.append(lx + i * 0.8)
+        legend_y.append(-1.0)
+        legend_colors.append(c)
+        legend_labels.append(["Min. loss", "", "", "Max. loss"][i])
+
+    lx += 4.0
+    for i, c in enumerate(profit_colors):
+        legend_x.append(lx + i * 0.8)
+        legend_y.append(-1.0)
+        legend_colors.append(c)
+        legend_labels.append(["Min. profit", "", "", "Max. profit"][i])
+
+    fig.add_trace(go.Scatter(
+        x=legend_x,
+        y=legend_y,
+        mode="markers",
+        marker=dict(symbol="square", size=11, color=legend_colors),
+        hoverinfo="skip",
+        showlegend=False
+    ))
+
+    # Legend text as annotations, not HTML.
+    annotations = list(month_annotations)
+    annotations += [
+        {
+            "x": legend_x[0] - 1.0, "y": -1.0,
+            "text": "Min. loss", "showarrow": False,
+            "font": {"size": 9, "color": "#888"}, "xanchor": "right"
+        },
+        {
+            "x": legend_x[3] + 0.8, "y": -1.0,
+            "text": "Max. loss", "showarrow": False,
+            "font": {"size": 9, "color": "#888"}, "xanchor": "left"
+        },
+        {
+            "x": legend_x[4] - 1.0, "y": -1.0,
+            "text": "Min. profit", "showarrow": False,
+            "font": {"size": 9, "color": "#888"}, "xanchor": "right"
+        },
+        {
+            "x": legend_x[7] + 0.8, "y": -1.0,
+            "text": "Max. profit", "showarrow": False,
+            "font": {"size": 9, "color": "#888"}, "xanchor": "left"
         }
-        .zpnl-months {
-            display: grid;
-            grid-template-columns: repeat(12, minmax(76px, 1fr));
-            gap: 12px;
-            min-width: 1060px;
-            align-items: start;
-        }
-        .zpnl-month { min-width: 76px; }
-        .zpnl-month-title {
-            text-align: center;
-            color: #5f6368;
-            font-size: 13px;
-            line-height: 18px;
-            margin-bottom: 7px;
-            font-weight: 500;
-        }
-        .zpnl-grid {
-            display: grid;
-            grid-template-columns: repeat(7, 1fr);
-            grid-auto-rows: 14px;
-            gap: 3px;
-        }
-        .zpnl-cell {
-            width: 100%;
-            height: 14px;
-            border-radius: 1px;
-            box-sizing: border-box;
-            cursor: default;
-            transition: transform 0.08s ease-in-out;
-        }
-        .zpnl-cell:hover {
-            transform: scale(1.14);
-            z-index: 2;
-            outline: 1px solid rgba(0,0,0,.12);
-        }
-        .zpnl-empty { background: transparent; }
-        .zpnl-no-trade { background: #f1f2f4; }
-        .zpnl-legend {
-            display: flex;
-            align-items: center;
-            justify-content: flex-end;
-            gap: 4px;
-            margin-top: 8px;
-            color: #70757a;
-            font-size: 11px;
-            white-space: nowrap;
-        }
-        .zpnl-legend-label { margin: 0 3px; }
-        .zpnl-legend-box {
-            width: 15px;
-            height: 15px;
-            border-radius: 1px;
-            display: inline-block;
-        }
-        .zpnl-legend-spacer { width: 12px; }
-        @media (max-width: 900px) {
-            .zpnl-months {
-                grid-template-columns: repeat(6, 76px);
-                justify-content: start;
-            }
-        }
-        </style>
-        <div class="zpnl-wrap">
-            <div class="zpnl-months">
-        """
-        + "".join(month_html)
-        + """
-            </div>
-        </div>
-        """
-        + legend,
-        unsafe_allow_html=True
+    ]
+
+    fig.update_layout(
+        height=145,
+        margin=dict(l=0, r=0, t=25, b=5),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(
+            visible=False,
+            fixedrange=True,
+            range=[-1, max(x_cursor - 1, 10)]
+        ),
+        yaxis=dict(
+            visible=False,
+            fixedrange=True,
+            range=[-1.8, 5.8]
+        ),
+        annotations=annotations,
+        hoverlabel=dict(
+            bgcolor="#222",
+            bordercolor="#555",
+            font=dict(size=11)
+        )
+    )
+
+    st.plotly_chart(
+        fig,
+        use_container_width=True,
+        config={"displayModeBar": False, "responsive": True}
     )
 
 
