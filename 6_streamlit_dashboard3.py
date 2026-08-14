@@ -2259,115 +2259,6 @@ def create_calendar_heatmap(fd):
     plt.tight_layout()
     plt.subplots_adjust(right=0.92)
     
-    # Add interactive hover functionality using HTML
-    st.markdown("""
-    <style>
-    .heatmap-container {
-        position: relative;
-        display: inline-block;
-    }
-    .heatmap-cell {
-        position: relative;
-        display: inline-block;
-        cursor: pointer;
-    }
-    .heatmap-cell:hover .tooltip {
-        visibility: visible;
-        opacity: 1;
-    }
-    .tooltip {
-        visibility: hidden;
-        opacity: 0;
-        width: 200px;
-        background-color: #1a1a1a;
-        color: #fff;
-        text-align: center;
-        border-radius: 6px;
-        padding: 8px;
-        position: absolute;
-        z-index: 1;
-        bottom: 125%;
-        left: 50%;
-        margin-left: -100px;
-        transition: opacity 0.3s;
-        border: 1px solid #444;
-        font-size: 12px;
-        font-family: monospace;
-    }
-    .tooltip::after {
-        content: "";
-        position: absolute;
-        top: 100%;
-        left: 50%;
-        margin-left: -5px;
-        border-width: 5px;
-        border-style: solid;
-        border-color: #1a1a1a transparent transparent transparent;
-    }
-    </style>
-    """, unsafe_allow_html=True)
-    
-    # Create interactive HTML for hover
-    hover_html = "<div class='heatmap-container'>"
-    
-    # Create a tooltip for each cell
-    for year, month in months_to_show:
-        hover_html += f"<h3 style='color:white'>{calendar.month_name[month]} {year}</h3>"
-        hover_html += "<table style='border-collapse: collapse;'>"
-        
-        # Header
-        hover_html += "<tr>"
-        for day in ['S', 'M', 'T', 'W', 'T', 'F', 'S']:
-            hover_html += f"<th style='color:white; padding: 5px; border: 1px solid #444;'>{day}</th>"
-        hover_html += "</tr>"
-        
-        # Calendar rows
-        cal = calendar.monthcalendar(year, month)
-        for week in cal:
-            hover_html += "<tr>"
-            for day in week:
-                if day != 0:
-                    date_obj = datetime(year, month, day)
-                    pnl = pnl_dict.get(date_obj, 0)
-                    
-                    if pnl > 0:
-                        bg_color = f"rgba(0, 255, 0, {min(abs(pnl)/max_abs, 0.8)})"
-                        text_color = '#00FF00'
-                    elif pnl < 0:
-                        bg_color = f"rgba(255, 0, 0, {min(abs(pnl)/max_abs, 0.8)})"
-                        text_color = '#FF4444'
-                    else:
-                        bg_color = '#2d2d2d'
-                        text_color = '#888888'
-                    
-                    # Tooltip text
-                    if pnl != 0:
-                        sign = '+' if pnl > 0 else ''
-                        if abs(pnl) >= 1000:
-                            tooltip = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>💰 P&L: {sign}₹{pnl/1000:.2f}K"
-                        else:
-                            tooltip = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>💰 P&L: {sign}₹{pnl:.0f}"
-                    else:
-                        tooltip = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>No trades"
-                    
-                    hover_html += f"""
-                    <td style='padding: 10px; border: 1px solid #444; background-color: {bg_color}; 
-                               color: {text_color}; text-align: center; font-weight: bold;
-                               position: relative;'>
-                        {day}
-                        <span class='tooltip'>{tooltip}</span>
-                    </td>
-                    """
-                else:
-                    hover_html += "<td style='padding: 10px; border: 1px solid #444; background-color: #1a1a1a;'></td>"
-            hover_html += "</tr>"
-        hover_html += "</table><br>"
-    
-    hover_html += "</div>"
-    
-    # Display the interactive HTML
-    st.markdown(hover_html, unsafe_allow_html=True)
-    
     return fig
 
 # Load data
@@ -2529,12 +2420,12 @@ with st.sidebar:
     st.markdown("### Trade ID Range")
     
     trade_id_min = st.number_input(
-	    "From Trade ID",
-	    min_value=1,  # Changed from int(final_df['trade_id'].min()) to 1
-	    max_value=int(final_df['trade_id'].max()),
-	    value=int(final_df['trade_id'].min()),
-	    step=1
-		)
+        "From Trade ID",
+        min_value=1,
+        max_value=int(final_df['trade_id'].max()),
+        value=int(final_df['trade_id'].min()),
+        step=1
+        )
 
     trade_id_max = st.number_input(
         "To Trade ID",
@@ -2552,7 +2443,7 @@ with st.sidebar:
     st.markdown("---")
     st.caption(f"Total trades: {len(final_df)}")
     st.caption(f"Date range: {min_date} to {max_date}")
-    st.caption(f"Trade IDs: {trade_id_min} to {trade_id_max}")  # show selected range
+    st.caption(f"Trade IDs: {trade_id_min} to {trade_id_max}")
     
     # ============================================
     # AUTO-REFRESH SETTINGS
