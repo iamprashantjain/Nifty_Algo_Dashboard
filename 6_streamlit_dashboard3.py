@@ -1896,7 +1896,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
-import plotly.express as px
+from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import json
 import scipy.stats as stats
@@ -1905,9 +1905,6 @@ import paramiko
 import sqlite3
 import tempfile
 import os
-import matplotlib.pyplot as plt
-import matplotlib.colors as mcolors
-from matplotlib.patches import Rectangle
 warnings.filterwarnings('ignore')
 
 # Set page config
@@ -1943,13 +1940,13 @@ def calculate_tax_and_charges(option_entry_price, option_exit_price, quantity):
     gross_pnl = (option_exit_price - option_entry_price) * quantity
     turnover = (option_entry_price + option_exit_price) * quantity
     
-    brokerage = 40  # ₹20 per trade x 2
-    stt = (option_exit_price * quantity) * 0.0005  # 0.05% on sell side
-    exchange_txn = turnover * 0.00053  # 0.053%
-    sebi_charges = turnover * 0.000001  # ₹10 per crore
+    brokerage = 40
+    stt = (option_exit_price * quantity) * 0.0005
+    exchange_txn = turnover * 0.00053
+    sebi_charges = turnover * 0.000001
     gst_chargeable = brokerage + exchange_txn + sebi_charges
-    gst = gst_chargeable * 0.18  # 18% GST
-    stamp_duty = turnover * 0.000003  # 0.0003%
+    gst = gst_chargeable * 0.18
+    stamp_duty = turnover * 0.000003
     
     total_charges = brokerage + stt + exchange_txn + gst + sebi_charges + stamp_duty
     net_pnl = gross_pnl - total_charges
@@ -1999,83 +1996,9 @@ def recalculate_trade(row):
         row['net_pnl'] = 0
         return row
 
-def max_consecutive_losses(returns):
-    is_loss = returns < 0
-    max_streak = 0
-    current_streak = 0
-    for loss in is_loss:
-        if loss:
-            current_streak += 1
-            max_streak = max(max_streak, current_streak)
-        else:
-            current_streak = 0
-    return max_streak
-
-def calculate_sharpe_ratio(returns, rf_rate=0.05):
-    """returns: daily or trade returns as decimals"""
-    if len(returns) < 2 or returns.std() == 0:
-        return 0
-    excess_returns = returns - rf_rate/252
-    return np.sqrt(252) * excess_returns.mean() / returns.std()
-
-def calculate_sortino_ratio(returns, rf_rate=0.05):
-    if len(returns) < 2:
-        return 0
-    excess_returns = returns - rf_rate/252
-    downside_returns = returns[returns < 0]
-    if len(downside_returns) == 0 or downside_returns.std() == 0:
-        return 0 if excess_returns.mean() <= 0 else np.inf
-    return np.sqrt(252) * excess_returns.mean() / downside_returns.std()
-
-def calculate_calmar_ratio(returns, max_drawdown_decimal):
-    """max_drawdown_decimal should be negative (e.g., -0.05)"""
-    if max_drawdown_decimal == 0:
-        return 0
-    annual_return = returns.mean() * 252
-    return annual_return / abs(max_drawdown_decimal)
-
-def calculate_max_drawdown(equity_curve):
-    """Calculate maximum drawdown from equity curve"""
-    running_max = equity_curve.expanding().max()
-    drawdown = (equity_curve - running_max) / running_max  # as decimal
-    max_dd = drawdown.min()
-    return max_dd, max_dd * 100  # returns (decimal, percentage)
-
-def calculate_win_loss_metrics(wins, losses):
-    avg_win = wins.mean() if len(wins) > 0 else 0
-    avg_loss = abs(losses.mean()) if len(losses) > 0 else 0
-    win_loss_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
-    return avg_win, avg_loss, win_loss_ratio
-
-def calculate_ulcer_index(equity_curve):
-    """equity_curve: cumulative P&L + initial capital"""
-    running_max = equity_curve.expanding().max()
-    drawdown_pct = (equity_curve - running_max) / running_max * 100
-    return np.sqrt((drawdown_pct ** 2).mean())
-
-def calculate_var(returns, confidence=0.95):
-    return np.percentile(returns, (1-confidence)*100)
-
-def calculate_cvar(returns, confidence=0.95):
-    var = calculate_var(returns, confidence)
-    return returns[returns <= var].mean()
-
-def monte_carlo_projection(trades, n_simulations=10000, n_future_trades=100):
-    np.random.seed(42)
-    simulations = []
-    for i in range(n_simulations):
-        sampled_trades = np.random.choice(trades, size=n_future_trades, replace=True)
-        cumulative = np.cumsum(sampled_trades)
-        simulations.append(cumulative)
-    sim_array = np.array(simulations)
-    median = np.median(sim_array[:, -1])
-    p95 = np.percentile(sim_array[:, -1], 95)
-    p05 = np.percentile(sim_array[:, -1], 5)
-    return {'median': median, 'optimistic': p95, 'pessimistic': p05, 'all_sims': sim_array}
-
-def create_calendar_heatmap(fd):
+def create_calendar_heatmap_plotly(fd):
     """
-    Create a calendar heatmap showing daily P&L with hover functionality
+    Create an interactive calendar heatmap using Plotly with hover functionality
     """
     # Calculate daily P&L
     daily_pnl = fd.groupby('entry_date')['net_pnl'].sum().reset_index()
@@ -2096,24 +2019,6 @@ def create_calendar_heatmap(fd):
     if not months_to_show:
         return None
     
-    # Create figure with 3 columns
-    n_months = len(months_to_show)
-    n_cols = 3
-    n_rows = (n_months + n_cols - 1) // n_cols
-    
-    # Create a SINGLE figure with dark grey background
-    fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, 7*n_rows))
-    fig.patch.set_facecolor('#2d2d2d')  # Dark grey background
-    
-    if n_rows == 1 and n_cols == 1:
-        axes = np.array([[axes]])
-    if n_rows == 1:
-        axes = axes.reshape(1, -1)
-    elif n_cols == 1:
-        axes = axes.reshape(-1, 1)
-    else:
-        axes = axes.flatten()
-    
     # Get all P&L values for color scaling
     all_pnls = [pnl for pnl in pnl_dict.values() if pnl != 0]
     if all_pnls:
@@ -2121,79 +2026,111 @@ def create_calendar_heatmap(fd):
     else:
         max_abs = 1
     
-    # Create colormap - red for negative, green for positive
-    colors = ['#FF0000', '#FF4444', '#FF8888', '#2d2d2d', '#88FF88', '#44FF44', '#00FF00']
-    cmap = mcolors.LinearSegmentedColormap.from_list('custom', colors, N=256)
+    # Create subplots - 3 columns
+    n_months = len(months_to_show)
+    n_cols = 3
+    n_rows = (n_months + n_cols - 1) // n_cols
+    
+    # Create figure with dark background
+    fig = make_subplots(
+        rows=n_rows, 
+        cols=n_cols,
+        subplot_titles=[f'{calendar.month_name[month]} {year}' for year, month in months_to_show],
+        horizontal_spacing=0.05,
+        vertical_spacing=0.15
+    )
     
     for idx, (year, month) in enumerate(months_to_show):
-        ax = axes[idx]
-        ax.set_facecolor('#2d2d2d')  # Dark grey background for each subplot
+        row = idx // n_cols + 1
+        col = idx % n_cols + 1
         
         # Get calendar for the month
         cal = calendar.monthcalendar(year, month)
         n_weeks = len(cal)
         
-        # Create grid
-        grid = np.zeros((n_weeks, 7))
-        grid_text = np.full((n_weeks, 7), '', dtype='<U30')
+        # Create data matrix
+        data_matrix = []
+        hover_texts = []
         
-        # Fill the grid with data
-        for week_idx, week in enumerate(cal):
-            for day_idx, day in enumerate(week):
+        for week in cal:
+            week_data = []
+            week_hover = []
+            for day in week:
                 if day != 0:
                     date_obj = datetime(year, month, day)
                     pnl = pnl_dict.get(date_obj, 0)
-                    grid[week_idx, day_idx] = pnl
                     
-                    # Format display text (day number only)
-                    grid_text[week_idx, day_idx] = str(day)
-        
-        # Normalize for color mapping
-        normalized_grid = np.zeros_like(grid)
-        for i in range(n_weeks):
-            for j in range(7):
-                if grid[i, j] != 0:
-                    normalized_grid[i, j] = 0.5 + (grid[i, j] / (2 * max_abs))
+                    # Store P&L value
+                    week_data.append(pnl)
+                    
+                    # Create hover text
+                    if pnl != 0:
+                        sign = '+' if pnl > 0 else ''
+                        if abs(pnl) >= 1000:
+                            pnl_str = f"{sign}₹{pnl/1000:.2f}K"
+                        else:
+                            pnl_str = f"{sign}₹{pnl:.0f}"
+                        hover_text = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>💰 P&L: {pnl_str}"
+                    else:
+                        hover_text = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>No trades"
+                    
+                    week_hover.append(hover_text)
                 else:
-                    normalized_grid[i, j] = 0.5
+                    week_data.append(None)
+                    week_hover.append('')
+            
+            data_matrix.append(week_data)
+            hover_texts.append(week_hover)
+        
+        # Convert to numpy array for heatmap
+        data_array = np.array(data_matrix, dtype=object)
         
         # Create heatmap
-        im = ax.imshow(normalized_grid, cmap=cmap, vmin=0, vmax=1, 
-                       aspect='equal', interpolation='nearest')
+        heatmap = go.Heatmap(
+            z=data_array,
+            text=[[str(day) if day != 0 else '' for day in week] for week in cal],
+            texttemplate='%{text}',
+            textfont={"size": 12, "color": "white"},
+            hovertemplate='%{customdata}<extra></extra>',
+            customdata=hover_texts,
+            colorscale=[
+                [0, '#8B0000'],
+                [0.25, '#FF4444'],
+                [0.45, '#FF8888'],
+                [0.5, '#2d2d2d'],
+                [0.55, '#88FF88'],
+                [0.75, '#44FF44'],
+                [1, '#00FF00']
+            ],
+            zmin=-max_abs,
+            zmax=max_abs,
+            showscale=False,
+            name=''
+        )
         
-        # Add text to cells
-        for i in range(n_weeks):
-            for j in range(7):
-                if grid_text[i, j]:
-                    text = grid_text[i, j]
-                    pnl = grid[i, j]
-                    day = int(text)
-                    date_obj = datetime(year, month, day)
-                    
-                    # Choose text color
-                    if pnl > 0:
-                        color = '#00FF00'  # Bright green
-                    elif pnl < 0:
-                        color = '#FF4444'  # Bright red
-                    else:
-                        color = '#888888'  # Gray for no trades
-                    
-                    # Add the day number
-                    ax.text(j, i, text, ha='center', va='center', 
-                           fontsize=9, color=color, fontweight='bold')
+        fig.add_trace(heatmap, row=row, col=col)
         
-        # Set day labels (S M T W T F S) - white text
-        day_names = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
-        ax.set_xticks(range(7))
-        ax.set_xticklabels(day_names, fontsize=10, fontweight='bold', color='white')
-        ax.set_yticks(range(n_weeks))
-        ax.set_yticklabels([f'W{i+1}' for i in range(n_weeks)], fontsize=9, color='white')
+        # Update x-axis (days of week)
+        fig.update_xaxes(
+            ticktext=['S', 'M', 'T', 'W', 'T', 'F', 'S'],
+            tickvals=[0, 1, 2, 3, 4, 5, 6],
+            row=row, col=col,
+            color='white',
+            gridcolor='#444444',
+            tickfont=dict(color='white')
+        )
         
-        # Title with month and year - white text
-        ax.set_title(f'{calendar.month_name[month]} {year}', 
-                    fontsize=14, fontweight='bold', pad=15, color='white')
+        # Update y-axis (weeks)
+        fig.update_yaxes(
+            ticktext=[f'W{i+1}' for i in range(n_weeks)],
+            tickvals=list(range(n_weeks)),
+            row=row, col=col,
+            color='white',
+            gridcolor='#444444',
+            tickfont=dict(color='white')
+        )
         
-        # Calculate monthly statistics
+        # Calculate monthly summary
         month_pnls = [pnl for date, pnl in pnl_dict.items() 
                      if date.year == year and date.month == month and pnl != 0]
         
@@ -2210,54 +2147,58 @@ def create_calendar_heatmap(fd):
             else:
                 total_str = f"+₹{total_pnl:.0f}" if total_pnl > 0 else f"-₹{abs(total_pnl):.0f}"
             
-            # Add monthly summary below the calendar - white text
-            color = '#00FF00' if total_pnl > 0 else '#FF4444' if total_pnl < 0 else '#888888'
-            ax.text(3.5, -1.0, total_str, ha='center', va='center', 
-                   fontsize=13, fontweight='bold', color=color)
-            
-            # Add win/loss info - white text
-            ax.text(3.5, -1.6, f'W:{win_days} L:{loss_days} ({win_rate:.0f}%)', 
-                   ha='center', va='center', fontsize=9, color='white')
-            
-            # Add best/worst day stats - white text
-            best_day = max(month_pnls)
-            worst_day = min(month_pnls)
-            ax.text(3.5, -2.2, f'Best: ₹{best_day:,.0f}  Worst: ₹{worst_day:,.0f}', 
-                   ha='center', va='center', fontsize=8, color='white')
-        
-        # Remove spines
-        for spine in ax.spines.values():
-            spine.set_visible(False)
-        
-        # Add thin grid lines
-        ax.set_xticks(np.arange(-0.5, 7, 1), minor=True)
-        ax.set_yticks(np.arange(-0.5, n_weeks, 1), minor=True)
-        ax.grid(which='minor', color='#444444', linestyle='-', linewidth=0.3, alpha=0.7)
-        
-        # Set limits
-        ax.set_xlim(-0.5, 6.5)
-        ax.set_ylim(-0.5, n_weeks - 0.5)
+            # Add annotation for monthly summary
+            fig.add_annotation(
+                x=3,
+                y=-1.5,
+                text=f"{total_str}<br>W:{win_days} L:{loss_days} ({win_rate:.0f}%)",
+                showarrow=False,
+                font=dict(size=11, color='white'),
+                row=row, col=col
+            )
     
-    # Hide unused subplots
-    for idx in range(len(months_to_show), len(axes)):
-        axes[idx].set_visible(False)
+    # Update layout with dark theme
+    fig.update_layout(
+        height=300 * n_rows + 100,
+        width=1200,
+        plot_bgcolor='#2d2d2d',
+        paper_bgcolor='#2d2d2d',
+        font=dict(color='white'),
+        title=dict(
+            text='📊 Daily P&L Calendar Heatmap',
+            font=dict(size=18, color='white')
+        ),
+        showlegend=False,
+        hoverlabel=dict(
+            bgcolor='#1a1a1a',
+            font=dict(color='white', size=12)
+        )
+    )
     
-    # Add colorbar with white labels
-    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
-    cbar = plt.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, 1)), 
-                       cax=cbar_ax)
-    cbar.set_ticks([0, 0.25, 0.5, 0.75, 1])
-    tick_labels = [f'-{max_abs:,.0f}', f'-{max_abs//2:,.0f}', '0', 
-                   f'{max_abs//2:,.0f}', f'{max_abs:,.0f}']
-    cbar.set_ticklabels(tick_labels)
-    cbar.set_label('P&L', fontsize=12, fontweight='bold', color='white')
-    cbar.ax.yaxis.set_tick_params(color='white')
-    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
-    
-    plt.suptitle('📊 Daily P&L Calendar Heatmap', fontsize=18, fontweight='bold', 
-                y=0.99, color='white')
-    plt.tight_layout()
-    plt.subplots_adjust(right=0.92)
+    # Add colorbar
+    fig.add_trace(
+        go.Heatmap(
+            z=[[-max_abs, 0, max_abs]],
+            colorscale=[
+                [0, '#8B0000'],
+                [0.25, '#FF4444'],
+                [0.45, '#FF8888'],
+                [0.5, '#2d2d2d'],
+                [0.55, '#88FF88'],
+                [0.75, '#44FF44'],
+                [1, '#00FF00']
+            ],
+            showscale=True,
+            colorbar=dict(
+                title="P&L",
+                tickvals=[-max_abs, -max_abs/2, 0, max_abs/2, max_abs],
+                ticktext=[f'-{max_abs:,.0f}', f'-{max_abs/2:,.0f}', '0', f'{max_abs/2:,.0f}', f'{max_abs:,.0f}'],
+                tickfont=dict(color='white'),
+                title_font=dict(color='white')
+            ),
+            hoverinfo='skip'
+        )
+    )
     
     return fig
 
@@ -2265,7 +2206,6 @@ def create_calendar_heatmap(fd):
 def read_db_directly():
     ssh_private_key = st.secrets["ssh_private_key"]
 
-    # Write key content to temporary file
     with tempfile.NamedTemporaryFile(mode='w', delete=False, suffix='.key') as temp_key_file:
         temp_key_file.write(ssh_private_key)
         temp_key_path = temp_key_file.name
@@ -2294,12 +2234,11 @@ def read_db_directly():
         return None
 
 # ============================================
-# SIDEBAR FILTERS & AUTO-REFRESH SETTINGS
+# SIDEBAR FILTERS
 # ============================================
 with st.sidebar:
     st.markdown("### Filters")
     
-    # First load the data to get min/max dates
     with st.spinner("Loading initial data..."):
         oracle_df = read_db_directly()
         if oracle_df is None:
@@ -2309,10 +2248,8 @@ with st.sidebar:
         oracle_df['source'] = "cloud"
         final_df = oracle_df.copy()
         
-        # RECALCULATE ALL TRADES FROM META
         final_df = final_df.apply(recalculate_trade, axis=1)
         
-        # Basic preprocessing
         final_df['entry_time'] = pd.to_datetime(final_df['entry_time'])
         final_df['exit_time'] = pd.to_datetime(final_df['exit_time'])
         final_df['entry_date'] = final_df['entry_time'].dt.date
@@ -2323,16 +2260,12 @@ with st.sidebar:
         final_df['option_type'] = final_df['symbol'].apply(lambda x: 'CE' if 'CE' in str(x).upper() else 'PE')
         final_df['is_win'] = final_df['net_pnl'] > 0
 
-        #remove wed fri trade rows
         final_df = final_df[~final_df['entry_time'].dt.weekday.isin([2, 4])]
 
-        #3-DAY HALT AFTER 5 SL STREAK
         final_df = final_df.sort_values(['entry_date', 'entry_time']).reset_index(drop=True)
         
-        # Identify Stoploss Hit trades
         final_df['is_sl'] = final_df['exit_reason'].str.contains('Stoploss Hit', case=False, na=False)
         
-        # Track rolling SL count
         sl_count = 0
         halt_indices = []
 
@@ -2344,7 +2277,6 @@ with st.sidebar:
             
             if sl_count >= 5:
                 halt_date = row['entry_date']
-                # Add 3 trading days (skip weekends)
                 halt_end = halt_date
                 trading_days_added = 0
                 while trading_days_added < 3:
@@ -2352,30 +2284,17 @@ with st.sidebar:
                     if halt_end.weekday() < 5:
                         trading_days_added += 1
                 
-                # Mark trades during halt period
                 halt_mask = (final_df['entry_date'] > halt_date) & (final_df['entry_date'] <= halt_end)
                 halt_indices.extend(final_df[halt_mask].index.tolist())
-                
-                # Reset SL count after halt
                 sl_count = 0
         
-        # Remove halted trades
         if halt_indices:
             final_df = final_df.drop(index=halt_indices)
         
-        # Remove the temporary column
         final_df = final_df.drop(columns=['is_sl'])
         
-        # ============================================================
-        # CONTINUE WITH EXISTING CODE (RECALCULATE, ETC.)
-        # ============================================================
-        
-        # RECALCULATE ALL TRADES FROM META
         final_df = final_df.apply(recalculate_trade, axis=1)
 
-
-        
-        # Extract exit_reason from meta
         def get_exit_reason(row):
             try:
                 if isinstance(row['meta'], str):
@@ -2388,7 +2307,6 @@ with st.sidebar:
         
         final_df['exit_reason'] = final_df.apply(get_exit_reason, axis=1)
         
-        # Remove rows after 2 stoploss hit
         final_df = pd.concat([group if len(group[group['exit_reason'].str.contains('Stoploss Hit', case=False, na=False)]) < 2 else group.loc[group[group['exit_reason'].str.contains('Stoploss Hit', case=False, na=False)].head(2).index] for date, group in final_df.groupby('entry_date')]).sort_index()
         
         final_df = final_df.sort_values(['entry_date', 'entry_time']).reset_index(drop=True)
@@ -2399,7 +2317,6 @@ with st.sidebar:
         final_df['drawdown'] = final_df['cumulative_pnl'] - final_df['running_max']
         final_df['drawdown_pct'] = (final_df['drawdown'] / INITIAL_CAPITAL) * 100
         
-        # Ensure trade_id is integer (if not already)
         if 'trade_id' in final_df.columns:
             final_df['trade_id'] = pd.to_numeric(final_df['trade_id'], errors='coerce')
             final_df = final_df.dropna(subset=['trade_id'])
@@ -2416,7 +2333,6 @@ with st.sidebar:
     max_date = final_df['entry_date'].max()
     date_range = st.date_input("Date Range", value=(min_date, max_date), min_value=min_date, max_value=max_date)
     
-    # --- NEW: Trade ID Range Filter ---
     st.markdown("### Trade ID Range")
     
     trade_id_min = st.number_input(
@@ -2425,7 +2341,7 @@ with st.sidebar:
         max_value=int(final_df['trade_id'].max()),
         value=int(final_df['trade_id'].min()),
         step=1
-        )
+    )
 
     trade_id_max = st.number_input(
         "To Trade ID",
@@ -2435,8 +2351,6 @@ with st.sidebar:
         step=1
     )
 
-
-    # ----------------------------------    
     instruments = st.multiselect("Instrument", options=final_df['instrument'].unique(), default=final_df['instrument'].unique())
     option_types = st.multiselect("Option Type", options=['CE', 'PE'], default=['CE', 'PE'])
     
@@ -2445,9 +2359,6 @@ with st.sidebar:
     st.caption(f"Date range: {min_date} to {max_date}")
     st.caption(f"Trade IDs: {trade_id_min} to {trade_id_max}")
     
-    # ============================================
-    # AUTO-REFRESH SETTINGS
-    # ============================================
     st.markdown("---")
     st.markdown("### 🔄 Auto-Refresh Settings")
     
@@ -2465,7 +2376,6 @@ with st.sidebar:
         
         refresh_seconds = refresh_hours * 3600
         
-        # Display refresh status
         if 'last_refresh' not in st.session_state:
             st.session_state.last_refresh = datetime.now()
         
@@ -2475,7 +2385,6 @@ with st.sidebar:
         st.info(f"🕐 Last refresh: {st.session_state.last_refresh.strftime('%H:%M:%S')}")
         st.info(f"⏰ Next refresh in: {time_to_refresh:.1f} hours")
         
-        # Manual refresh button
         col1, col2 = st.columns(2)
         with col1:
             if st.button("🔄 Refresh Now", use_container_width=True):
@@ -2486,7 +2395,6 @@ with st.sidebar:
             if st.button("📊 Force Rerun", use_container_width=True):
                 st.rerun()
         
-        # Apply auto-refresh
         add_auto_refresh(refresh_seconds)
 
 # ============================================
@@ -2497,7 +2405,6 @@ if len(date_range) == 2:
 else:
     start_date, end_date = min_date, max_date
 
-# Apply filters (including Trade ID range)
 mask = (
     (final_df['entry_date'] >= start_date) &
     (final_df['entry_date'] <= end_date) &
@@ -2520,7 +2427,6 @@ drawdown = equity_curve - running_max
 max_dd = min(fd.groupby('entry_date')['net_pnl'].sum()) if len(daily) > 0 else 0
 max_dd_pct = (max_dd / INITIAL_CAPITAL) * 100
 
-# Calculate metrics
 daily_returns = daily / INITIAL_CAPITAL
 sharpe = calculate_sharpe_ratio(daily_returns)
 sortino = calculate_sortino_ratio(daily_returns)
@@ -2533,7 +2439,6 @@ avg_win, avg_loss, win_loss_ratio = calculate_win_loss_metrics(wins, losses)
 var_95 = calculate_var(daily_returns) * INITIAL_CAPITAL
 cvar_95 = calculate_cvar(daily_returns) * INITIAL_CAPITAL
 
-# DASHBOARD
 st.title("Trading Dashboard")
 st.markdown(f"*Analysis Period: {start_date} to {end_date}*")
 
@@ -2551,7 +2456,6 @@ with col3:
 with col4:
     st.metric("Effective Tax Rate", f"{(fd['total_charges'].sum()/fd['gross_pnl'].sum()*100 if fd['gross_pnl'].sum() != 0 else 0):.1f}%")
 
-# Detailed tax breakdown table
 tax_breakdown = pd.DataFrame({
     'Component': ['Gross P&L', 'Brokerage', 'STT', 'Exchange Transaction', 'GST', 'SEBI Charges', 'Stamp Duty', 'TOTAL CHARGES', 'NET P&L'],
     'Amount (₹)': [
@@ -2572,10 +2476,9 @@ st.dataframe(tax_breakdown, hide_index=True, use_container_width=True)
 # MONTHLY P&L CALENDAR HEATMAP (COLLAPSIBLE)
 # ============================================
 with st.expander("📅 Monthly P&L Calendar Heatmap (Click to expand)", expanded=False):
-    fig = create_calendar_heatmap(fd)
+    fig = create_calendar_heatmap_plotly(fd)
     if fig:
-        st.pyplot(fig)
-        plt.close(fig)
+        st.plotly_chart(fig, use_container_width=True)
     else:
         st.info("Not enough data to generate calendar heatmap")
 
