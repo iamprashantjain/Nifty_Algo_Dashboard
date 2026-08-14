@@ -2635,20 +2635,26 @@ st.markdown("---")
 st.markdown("## 📅 Calendar Heatmap")
 
 # Prepare daily data for the heatmap
-daily_pnl = fd.groupby('entry_date')['net_pnl'].sum().reset_index()
+# Ensure entry_date is datetime
+fd['entry_date_dt'] = pd.to_datetime(fd['entry_date'])
+
+daily_pnl = fd.groupby(fd['entry_date_dt'].dt.date)['net_pnl'].sum().reset_index()
+daily_pnl.columns = ['entry_date', 'net_pnl']
 daily_pnl['date_str'] = daily_pnl['entry_date'].astype(str)
 daily_dict = dict(zip(daily_pnl['date_str'], daily_pnl['net_pnl']))
 
 if not fd.empty:
     # Get available years and months
-    available_years = sorted(fd['entry_date'].dt.year.unique())
+    fd['year'] = fd['entry_date_dt'].dt.year
+    fd['month'] = fd['entry_date_dt'].dt.month
+    available_years = sorted(fd['year'].unique())
     
     # Initialize session state for navigation
     if 'heatmap_year' not in st.session_state:
-        st.session_state.heatmap_year = available_years[-1] if available_years else datetime.now().year
+        st.session_state.heatmap_year = int(available_years[-1]) if len(available_years) > 0 else datetime.now().year
     if 'heatmap_month' not in st.session_state:
         # Get the latest month with data
-        latest_date = fd['entry_date'].max()
+        latest_date = fd['entry_date_dt'].max()
         st.session_state.heatmap_month = latest_date.month if pd.notna(latest_date) else datetime.now().month
     
     # Navigation buttons and title
@@ -2660,9 +2666,9 @@ if not fd.empty:
             if current_year - 1 in available_years:
                 st.session_state.heatmap_year = current_year - 1
                 # Set to December of previous year
-                prev_year_months = sorted(fd[fd['entry_date'].dt.year == st.session_state.heatmap_year]['entry_date'].dt.month.unique())
-                if prev_year_months:
-                    st.session_state.heatmap_month = prev_year_months[-1]
+                prev_year_months = sorted(fd[fd['year'] == st.session_state.heatmap_year]['month'].unique())
+                if len(prev_year_months) > 0:
+                    st.session_state.heatmap_month = int(prev_year_months[-1])
                 st.rerun()
     
     with col2:
@@ -2678,7 +2684,7 @@ if not fd.empty:
                 new_month = current_month - 1
             
             if new_year in available_years:
-                new_year_months = sorted(fd[fd['entry_date'].dt.year == new_year]['entry_date'].dt.month.unique())
+                new_year_months = sorted(fd[fd['year'] == new_year]['month'].unique())
                 if new_month in new_year_months:
                     st.session_state.heatmap_year = new_year
                     st.session_state.heatmap_month = new_month
@@ -2702,7 +2708,7 @@ if not fd.empty:
                 new_month = current_month + 1
             
             if new_year in available_years:
-                new_year_months = sorted(fd[fd['entry_date'].dt.year == new_year]['entry_date'].dt.month.unique())
+                new_year_months = sorted(fd[fd['year'] == new_year]['month'].unique())
                 if new_month in new_year_months:
                     st.session_state.heatmap_year = new_year
                     st.session_state.heatmap_month = new_month
@@ -2714,14 +2720,14 @@ if not fd.empty:
             if current_year + 1 in available_years:
                 st.session_state.heatmap_year = current_year + 1
                 # Set to January of next year
-                next_year_months = sorted(fd[fd['entry_date'].dt.year == st.session_state.heatmap_year]['entry_date'].dt.month.unique())
-                if next_year_months:
-                    st.session_state.heatmap_month = next_year_months[0]
+                next_year_months = sorted(fd[fd['year'] == st.session_state.heatmap_year]['month'].unique())
+                if len(next_year_months) > 0:
+                    st.session_state.heatmap_month = int(next_year_months[0])
                 st.rerun()
     
     # Get current year and month from session state
-    selected_year = st.session_state.heatmap_year
-    selected_month = st.session_state.heatmap_month
+    selected_year = int(st.session_state.heatmap_year)
+    selected_month = int(st.session_state.heatmap_month)
     
     # Create and display the heatmap
     fig_heatmap = create_calendar_heatmap_exact(daily_dict, selected_year, selected_month)
@@ -2734,7 +2740,7 @@ if not fd.empty:
     else:
         month_end = pd.Timestamp(f"{selected_year}-{selected_month+1:02d}-01") - pd.Timedelta(days=1)
     
-    month_data = fd[(fd['entry_date'] >= month_start.date()) & (fd['entry_date'] <= month_end.date())]
+    month_data = fd[(fd['entry_date_dt'] >= month_start) & (fd['entry_date_dt'] <= month_end)]
     
     if not month_data.empty:
         # Add a legend/color scale below the heatmap
@@ -2767,8 +2773,6 @@ if not fd.empty:
         
         col1, col2, col3, col4, col5 = st.columns(5)
         
-        pnl_color = "green" if month_pnl > 0 else "red" if month_pnl < 0 else "black"
-        
         with col1:
             st.metric("Net P&L", f"₹{month_pnl:,.0f}", delta=f"{month_pnl:+,.0f}")
         
@@ -2786,8 +2790,8 @@ if not fd.empty:
         
         # Show daily breakdown for the month
         with st.expander("📋 Daily Breakdown for Selected Month"):
-            month_daily = fd[(fd['entry_date'] >= month_start.date()) & (fd['entry_date'] <= month_end.date())]
-            month_daily_summary = month_daily.groupby('entry_date').agg({
+            month_daily = fd[(fd['entry_date_dt'] >= month_start) & (fd['entry_date_dt'] <= month_end)]
+            month_daily_summary = month_daily.groupby(month_daily['entry_date_dt'].dt.date).agg({
                 'net_pnl': ['sum', 'count', 'mean'],
                 'is_win': 'mean'
             }).round(2)
