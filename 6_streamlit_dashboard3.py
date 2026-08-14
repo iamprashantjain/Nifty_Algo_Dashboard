@@ -1896,6 +1896,7 @@ import streamlit as st
 import pandas as pd
 import numpy as np
 import plotly.graph_objects as go
+import plotly.express as px
 from plotly.subplots import make_subplots
 from datetime import datetime, timedelta
 import json
@@ -1995,6 +1996,80 @@ def recalculate_trade(row):
     except:
         row['net_pnl'] = 0
         return row
+
+def max_consecutive_losses(returns):
+    is_loss = returns < 0
+    max_streak = 0
+    current_streak = 0
+    for loss in is_loss:
+        if loss:
+            current_streak += 1
+            max_streak = max(max_streak, current_streak)
+        else:
+            current_streak = 0
+    return max_streak
+
+def calculate_sharpe_ratio(returns, rf_rate=0.05):
+    """returns: daily or trade returns as decimals"""
+    if len(returns) < 2 or returns.std() == 0:
+        return 0
+    excess_returns = returns - rf_rate/252
+    return np.sqrt(252) * excess_returns.mean() / returns.std()
+
+def calculate_sortino_ratio(returns, rf_rate=0.05):
+    if len(returns) < 2:
+        return 0
+    excess_returns = returns - rf_rate/252
+    downside_returns = returns[returns < 0]
+    if len(downside_returns) == 0 or downside_returns.std() == 0:
+        return 0 if excess_returns.mean() <= 0 else np.inf
+    return np.sqrt(252) * excess_returns.mean() / downside_returns.std()
+
+def calculate_calmar_ratio(returns, max_drawdown_decimal):
+    """max_drawdown_decimal should be negative (e.g., -0.05)"""
+    if max_drawdown_decimal == 0:
+        return 0
+    annual_return = returns.mean() * 252
+    return annual_return / abs(max_drawdown_decimal)
+
+def calculate_max_drawdown(equity_curve):
+    """Calculate maximum drawdown from equity curve"""
+    running_max = equity_curve.expanding().max()
+    drawdown = (equity_curve - running_max) / running_max  # as decimal
+    max_dd = drawdown.min()
+    return max_dd, max_dd * 100  # returns (decimal, percentage)
+
+def calculate_win_loss_metrics(wins, losses):
+    avg_win = wins.mean() if len(wins) > 0 else 0
+    avg_loss = abs(losses.mean()) if len(losses) > 0 else 0
+    win_loss_ratio = avg_win / avg_loss if avg_loss != 0 else np.inf
+    return avg_win, avg_loss, win_loss_ratio
+
+def calculate_ulcer_index(equity_curve):
+    """equity_curve: cumulative P&L + initial capital"""
+    running_max = equity_curve.expanding().max()
+    drawdown_pct = (equity_curve - running_max) / running_max * 100
+    return np.sqrt((drawdown_pct ** 2).mean())
+
+def calculate_var(returns, confidence=0.95):
+    return np.percentile(returns, (1-confidence)*100)
+
+def calculate_cvar(returns, confidence=0.95):
+    var = calculate_var(returns, confidence)
+    return returns[returns <= var].mean()
+
+def monte_carlo_projection(trades, n_simulations=10000, n_future_trades=100):
+    np.random.seed(42)
+    simulations = []
+    for i in range(n_simulations):
+        sampled_trades = np.random.choice(trades, size=n_future_trades, replace=True)
+        cumulative = np.cumsum(sampled_trades)
+        simulations.append(cumulative)
+    sim_array = np.array(simulations)
+    median = np.median(sim_array[:, -1])
+    p95 = np.percentile(sim_array[:, -1], 95)
+    p05 = np.percentile(sim_array[:, -1], 5)
+    return {'median': median, 'optimistic': p95, 'pessimistic': p05, 'all_sims': sim_array}
 
 def create_calendar_heatmap_plotly(fd):
     """
