@@ -1907,6 +1907,7 @@ import tempfile
 import os
 import matplotlib.pyplot as plt
 import matplotlib.colors as mcolors
+from matplotlib.patches import Rectangle
 warnings.filterwarnings('ignore')
 
 # Set page config
@@ -2074,7 +2075,7 @@ def monte_carlo_projection(trades, n_simulations=10000, n_future_trades=100):
 
 def create_calendar_heatmap(fd):
     """
-    Create a calendar heatmap showing daily P&L
+    Create a calendar heatmap showing daily P&L with hover functionality
     """
     # Calculate daily P&L
     daily_pnl = fd.groupby('entry_date')['net_pnl'].sum().reset_index()
@@ -2100,8 +2101,10 @@ def create_calendar_heatmap(fd):
     n_cols = 3
     n_rows = (n_months + n_cols - 1) // n_cols
     
-    # Create a SINGLE figure
+    # Create a SINGLE figure with black background
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, 7*n_rows))
+    fig.patch.set_facecolor('black')  # Set figure background to black
+    
     if n_rows == 1 and n_cols == 1:
         axes = np.array([[axes]])
     if n_rows == 1:
@@ -2118,12 +2121,13 @@ def create_calendar_heatmap(fd):
     else:
         max_abs = 1
     
-    # Create colormap - red for negative, green for positive
-    colors = ['#8B0000', '#DC143C', '#FFB6C1', '#FFFFFF', '#90EE90', '#008000', '#006400']
+    # Create colormap - red for negative, green for positive (more vibrant for black background)
+    colors = ['#FF0000', '#FF4444', '#FF8888', '#000000', '#88FF88', '#44FF44', '#00FF00']
     cmap = mcolors.LinearSegmentedColormap.from_list('custom', colors, N=256)
     
     for idx, (year, month) in enumerate(months_to_show):
         ax = axes[idx]
+        ax.set_facecolor('black')  # Set axes background to black
         
         # Get calendar for the month
         cal = calendar.monthcalendar(year, month)
@@ -2132,6 +2136,7 @@ def create_calendar_heatmap(fd):
         # Create grid
         grid = np.zeros((n_weeks, 7))
         grid_text = np.full((n_weeks, 7), '', dtype='<U30')
+        hover_text = np.full((n_weeks, 7), '', dtype='<U100')
         
         # Fill the grid with data
         for week_idx, week in enumerate(cal):
@@ -2141,15 +2146,18 @@ def create_calendar_heatmap(fd):
                     pnl = pnl_dict.get(date_obj, 0)
                     grid[week_idx, day_idx] = pnl
                     
-                    # Format display text
+                    # Format display text (day number only, no P&L visible unless hover)
+                    grid_text[week_idx, day_idx] = str(day)
+                    
+                    # Format hover text with full details
                     if pnl != 0:
+                        sign = '+' if pnl > 0 else ''
                         if abs(pnl) >= 1000:
-                            display_text = f'{day}\n₹{pnl/1000:.1f}K'
+                            hover_text[week_idx, day_idx] = f'Date: {date_obj.strftime("%Y-%m-%d")}\nP&L: {sign}₹{pnl/1000:.2f}K'
                         else:
-                            display_text = f'{day}\n₹{pnl:.0f}'
-                        grid_text[week_idx, day_idx] = display_text
+                            hover_text[week_idx, day_idx] = f'Date: {date_obj.strftime("%Y-%m-%d")}\nP&L: {sign}₹{pnl:.0f}'
                     else:
-                        grid_text[week_idx, day_idx] = str(day)
+                        hover_text[week_idx, day_idx] = f'Date: {date_obj.strftime("%Y-%m-%d")}\nNo trades'
         
         # Normalize for color mapping
         normalized_grid = np.zeros_like(grid)
@@ -2164,34 +2172,44 @@ def create_calendar_heatmap(fd):
         im = ax.imshow(normalized_grid, cmap=cmap, vmin=0, vmax=1, 
                        aspect='equal', interpolation='nearest')
         
-        # Add text to cells
+        # Add text and hover functionality
         for i in range(n_weeks):
             for j in range(7):
                 if grid_text[i, j]:
                     text = grid_text[i, j]
                     pnl = grid[i, j]
+                    hover = hover_text[i, j]
                     
-                    # Choose text color
+                    # Choose text color (white for better visibility on dark background)
                     if pnl > 0:
-                        color = 'darkgreen'
+                        color = '#00FF00'  # Bright green
                     elif pnl < 0:
-                        color = 'darkred'
+                        color = '#FF4444'  # Bright red
                     else:
-                        color = 'black'
+                        color = '#888888'  # Gray for no trades
                     
+                    # Add text with hover tooltip
                     ax.text(j, i, text, ha='center', va='center', 
                            fontsize=9, color=color, fontweight='bold')
+                    
+                    # Add hover annotation as a rectangle that appears on hover
+                    # Create a transparent patch that captures hover events
+                    rect = Rectangle((j-0.5, i-0.5), 1, 1, 
+                                   linewidth=0, facecolor='none', 
+                                   alpha=0, picker=True)
+                    ax.add_patch(rect)
+                    rect.set_gid(f'{i}_{j}_{hover}')
         
-        # Set day labels (S M T W T F S)
+        # Set day labels (S M T W T F S) - white text
         day_names = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
         ax.set_xticks(range(7))
-        ax.set_xticklabels(day_names, fontsize=10, fontweight='bold')
+        ax.set_xticklabels(day_names, fontsize=10, fontweight='bold', color='white')
         ax.set_yticks(range(n_weeks))
-        ax.set_yticklabels([f'W{i+1}' for i in range(n_weeks)], fontsize=9)
+        ax.set_yticklabels([f'W{i+1}' for i in range(n_weeks)], fontsize=9, color='white')
         
-        # Title with month and year
+        # Title with month and year - white text
         ax.set_title(f'{calendar.month_name[month]} {year}', 
-                    fontsize=14, fontweight='bold', pad=15)
+                    fontsize=14, fontweight='bold', pad=15, color='white')
         
         # Calculate monthly statistics
         month_pnls = [pnl for date, pnl in pnl_dict.items() 
@@ -2210,29 +2228,29 @@ def create_calendar_heatmap(fd):
             else:
                 total_str = f"+₹{total_pnl:.0f}" if total_pnl > 0 else f"-₹{abs(total_pnl):.0f}"
             
-            # Add monthly summary below the calendar
-            color = 'green' if total_pnl > 0 else 'red' if total_pnl < 0 else 'gray'
+            # Add monthly summary below the calendar - white text
+            color = '#00FF00' if total_pnl > 0 else '#FF4444' if total_pnl < 0 else '#888888'
             ax.text(3.5, -1.0, total_str, ha='center', va='center', 
                    fontsize=13, fontweight='bold', color=color)
             
-            # Add win/loss info
+            # Add win/loss info - white text
             ax.text(3.5, -1.6, f'W:{win_days} L:{loss_days} ({win_rate:.0f}%)', 
-                   ha='center', va='center', fontsize=9, color='gray')
+                   ha='center', va='center', fontsize=9, color='white')
             
-            # Add best/worst day stats
+            # Add best/worst day stats - white text
             best_day = max(month_pnls)
             worst_day = min(month_pnls)
             ax.text(3.5, -2.2, f'Best: ₹{best_day:,.0f}  Worst: ₹{worst_day:,.0f}', 
-                   ha='center', va='center', fontsize=8, color='gray')
+                   ha='center', va='center', fontsize=8, color='white')
         
         # Remove spines
         for spine in ax.spines.values():
             spine.set_visible(False)
         
-        # Add thin grid lines
+        # Add thin grid lines (lighter for dark background)
         ax.set_xticks(np.arange(-0.5, 7, 1), minor=True)
         ax.set_yticks(np.arange(-0.5, n_weeks, 1), minor=True)
-        ax.grid(which='minor', color='gray', linestyle='-', linewidth=0.3, alpha=0.5)
+        ax.grid(which='minor', color='#333333', linestyle='-', linewidth=0.3, alpha=0.7)
         
         # Set limits
         ax.set_xlim(-0.5, 6.5)
@@ -2242,7 +2260,7 @@ def create_calendar_heatmap(fd):
     for idx in range(len(months_to_show), len(axes)):
         axes[idx].set_visible(False)
     
-    # Add colorbar
+    # Add colorbar with white labels
     cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
     cbar = plt.colorbar(plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(0, 1)), 
                        cax=cbar_ax)
@@ -2250,9 +2268,12 @@ def create_calendar_heatmap(fd):
     tick_labels = [f'-{max_abs:,.0f}', f'-{max_abs//2:,.0f}', '0', 
                    f'{max_abs//2:,.0f}', f'{max_abs:,.0f}']
     cbar.set_ticklabels(tick_labels)
-    cbar.set_label('P&L', fontsize=12, fontweight='bold')
+    cbar.set_label('P&L', fontsize=12, fontweight='bold', color='white')
+    cbar.ax.yaxis.set_tick_params(color='white')
+    plt.setp(plt.getp(cbar.ax.axes, 'yticklabels'), color='white')
     
-    plt.suptitle('📊 Daily P&L Calendar Heatmap', fontsize=18, fontweight='bold', y=0.99)
+    plt.suptitle('📊 Daily P&L Calendar Heatmap', fontsize=18, fontweight='bold', 
+                y=0.99, color='white')
     plt.tight_layout()
     plt.subplots_adjust(right=0.92)
     
