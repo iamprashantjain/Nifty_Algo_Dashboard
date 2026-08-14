@@ -2566,18 +2566,15 @@ tax_breakdown = pd.DataFrame({
 st.dataframe(tax_breakdown, hide_index=True, use_container_width=True)
 
 # ============================================
-# NEW: MONTHLY P&L CALENDAR HEATMAP
+# MONTHLY P&L CALENDAR HEATMAP (COLLAPSIBLE)
 # ============================================
-st.markdown("---")
-st.markdown("## 📅 Monthly P&L Calendar Heatmap")
-
-# Create and display the calendar heatmap
-fig = create_calendar_heatmap(fd)
-if fig:
-    st.pyplot(fig)
-    plt.close(fig)  # Clean up to prevent memory issues
-else:
-    st.info("Not enough data to generate calendar heatmap")
+with st.expander("📅 Monthly P&L Calendar Heatmap (Click to expand)", expanded=False):
+    fig = create_calendar_heatmap(fd)
+    if fig:
+        st.pyplot(fig)
+        plt.close(fig)
+    else:
+        st.info("Not enough data to generate calendar heatmap")
 
 # Monte Carlo Simulation
 st.markdown("---")
