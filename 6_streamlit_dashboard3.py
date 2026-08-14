@@ -2101,9 +2101,9 @@ def create_calendar_heatmap(fd):
     n_cols = 3
     n_rows = (n_months + n_cols - 1) // n_cols
     
-    # Create a SINGLE figure with black background
+    # Create a SINGLE figure with dark grey background
     fig, axes = plt.subplots(n_rows, n_cols, figsize=(20, 7*n_rows))
-    fig.patch.set_facecolor('black')  # Set figure background to black
+    fig.patch.set_facecolor('#2d2d2d')  # Dark grey background
     
     if n_rows == 1 and n_cols == 1:
         axes = np.array([[axes]])
@@ -2121,13 +2121,13 @@ def create_calendar_heatmap(fd):
     else:
         max_abs = 1
     
-    # Create colormap - red for negative, green for positive (more vibrant for black background)
-    colors = ['#FF0000', '#FF4444', '#FF8888', '#000000', '#88FF88', '#44FF44', '#00FF00']
+    # Create colormap - red for negative, green for positive
+    colors = ['#FF0000', '#FF4444', '#FF8888', '#2d2d2d', '#88FF88', '#44FF44', '#00FF00']
     cmap = mcolors.LinearSegmentedColormap.from_list('custom', colors, N=256)
     
     for idx, (year, month) in enumerate(months_to_show):
         ax = axes[idx]
-        ax.set_facecolor('black')  # Set axes background to black
+        ax.set_facecolor('#2d2d2d')  # Dark grey background for each subplot
         
         # Get calendar for the month
         cal = calendar.monthcalendar(year, month)
@@ -2136,7 +2136,6 @@ def create_calendar_heatmap(fd):
         # Create grid
         grid = np.zeros((n_weeks, 7))
         grid_text = np.full((n_weeks, 7), '', dtype='<U30')
-        hover_text = np.full((n_weeks, 7), '', dtype='<U100')
         
         # Fill the grid with data
         for week_idx, week in enumerate(cal):
@@ -2146,18 +2145,8 @@ def create_calendar_heatmap(fd):
                     pnl = pnl_dict.get(date_obj, 0)
                     grid[week_idx, day_idx] = pnl
                     
-                    # Format display text (day number only, no P&L visible unless hover)
+                    # Format display text (day number only)
                     grid_text[week_idx, day_idx] = str(day)
-                    
-                    # Format hover text with full details
-                    if pnl != 0:
-                        sign = '+' if pnl > 0 else ''
-                        if abs(pnl) >= 1000:
-                            hover_text[week_idx, day_idx] = f'Date: {date_obj.strftime("%Y-%m-%d")}\nP&L: {sign}₹{pnl/1000:.2f}K'
-                        else:
-                            hover_text[week_idx, day_idx] = f'Date: {date_obj.strftime("%Y-%m-%d")}\nP&L: {sign}₹{pnl:.0f}'
-                    else:
-                        hover_text[week_idx, day_idx] = f'Date: {date_obj.strftime("%Y-%m-%d")}\nNo trades'
         
         # Normalize for color mapping
         normalized_grid = np.zeros_like(grid)
@@ -2172,15 +2161,16 @@ def create_calendar_heatmap(fd):
         im = ax.imshow(normalized_grid, cmap=cmap, vmin=0, vmax=1, 
                        aspect='equal', interpolation='nearest')
         
-        # Add text and hover functionality
+        # Add text to cells
         for i in range(n_weeks):
             for j in range(7):
                 if grid_text[i, j]:
                     text = grid_text[i, j]
                     pnl = grid[i, j]
-                    hover = hover_text[i, j]
+                    day = int(text)
+                    date_obj = datetime(year, month, day)
                     
-                    # Choose text color (white for better visibility on dark background)
+                    # Choose text color
                     if pnl > 0:
                         color = '#00FF00'  # Bright green
                     elif pnl < 0:
@@ -2188,17 +2178,9 @@ def create_calendar_heatmap(fd):
                     else:
                         color = '#888888'  # Gray for no trades
                     
-                    # Add text with hover tooltip
+                    # Add the day number
                     ax.text(j, i, text, ha='center', va='center', 
                            fontsize=9, color=color, fontweight='bold')
-                    
-                    # Add hover annotation as a rectangle that appears on hover
-                    # Create a transparent patch that captures hover events
-                    rect = Rectangle((j-0.5, i-0.5), 1, 1, 
-                                   linewidth=0, facecolor='none', 
-                                   alpha=0, picker=True)
-                    ax.add_patch(rect)
-                    rect.set_gid(f'{i}_{j}_{hover}')
         
         # Set day labels (S M T W T F S) - white text
         day_names = ['S', 'M', 'T', 'W', 'T', 'F', 'S']
@@ -2247,10 +2229,10 @@ def create_calendar_heatmap(fd):
         for spine in ax.spines.values():
             spine.set_visible(False)
         
-        # Add thin grid lines (lighter for dark background)
+        # Add thin grid lines
         ax.set_xticks(np.arange(-0.5, 7, 1), minor=True)
         ax.set_yticks(np.arange(-0.5, n_weeks, 1), minor=True)
-        ax.grid(which='minor', color='#333333', linestyle='-', linewidth=0.3, alpha=0.7)
+        ax.grid(which='minor', color='#444444', linestyle='-', linewidth=0.3, alpha=0.7)
         
         # Set limits
         ax.set_xlim(-0.5, 6.5)
@@ -2276,6 +2258,115 @@ def create_calendar_heatmap(fd):
                 y=0.99, color='white')
     plt.tight_layout()
     plt.subplots_adjust(right=0.92)
+    
+    # Add interactive hover functionality using HTML
+    st.markdown("""
+    <style>
+    .heatmap-container {
+        position: relative;
+        display: inline-block;
+    }
+    .heatmap-cell {
+        position: relative;
+        display: inline-block;
+        cursor: pointer;
+    }
+    .heatmap-cell:hover .tooltip {
+        visibility: visible;
+        opacity: 1;
+    }
+    .tooltip {
+        visibility: hidden;
+        opacity: 0;
+        width: 200px;
+        background-color: #1a1a1a;
+        color: #fff;
+        text-align: center;
+        border-radius: 6px;
+        padding: 8px;
+        position: absolute;
+        z-index: 1;
+        bottom: 125%;
+        left: 50%;
+        margin-left: -100px;
+        transition: opacity 0.3s;
+        border: 1px solid #444;
+        font-size: 12px;
+        font-family: monospace;
+    }
+    .tooltip::after {
+        content: "";
+        position: absolute;
+        top: 100%;
+        left: 50%;
+        margin-left: -5px;
+        border-width: 5px;
+        border-style: solid;
+        border-color: #1a1a1a transparent transparent transparent;
+    }
+    </style>
+    """, unsafe_allow_html=True)
+    
+    # Create interactive HTML for hover
+    hover_html = "<div class='heatmap-container'>"
+    
+    # Create a tooltip for each cell
+    for year, month in months_to_show:
+        hover_html += f"<h3 style='color:white'>{calendar.month_name[month]} {year}</h3>"
+        hover_html += "<table style='border-collapse: collapse;'>"
+        
+        # Header
+        hover_html += "<tr>"
+        for day in ['S', 'M', 'T', 'W', 'T', 'F', 'S']:
+            hover_html += f"<th style='color:white; padding: 5px; border: 1px solid #444;'>{day}</th>"
+        hover_html += "</tr>"
+        
+        # Calendar rows
+        cal = calendar.monthcalendar(year, month)
+        for week in cal:
+            hover_html += "<tr>"
+            for day in week:
+                if day != 0:
+                    date_obj = datetime(year, month, day)
+                    pnl = pnl_dict.get(date_obj, 0)
+                    
+                    if pnl > 0:
+                        bg_color = f"rgba(0, 255, 0, {min(abs(pnl)/max_abs, 0.8)})"
+                        text_color = '#00FF00'
+                    elif pnl < 0:
+                        bg_color = f"rgba(255, 0, 0, {min(abs(pnl)/max_abs, 0.8)})"
+                        text_color = '#FF4444'
+                    else:
+                        bg_color = '#2d2d2d'
+                        text_color = '#888888'
+                    
+                    # Tooltip text
+                    if pnl != 0:
+                        sign = '+' if pnl > 0 else ''
+                        if abs(pnl) >= 1000:
+                            tooltip = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>💰 P&L: {sign}₹{pnl/1000:.2f}K"
+                        else:
+                            tooltip = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>💰 P&L: {sign}₹{pnl:.0f}"
+                    else:
+                        tooltip = f"📅 {date_obj.strftime('%Y-%m-%d')}<br>No trades"
+                    
+                    hover_html += f"""
+                    <td style='padding: 10px; border: 1px solid #444; background-color: {bg_color}; 
+                               color: {text_color}; text-align: center; font-weight: bold;
+                               position: relative;'>
+                        {day}
+                        <span class='tooltip'>{tooltip}</span>
+                    </td>
+                    """
+                else:
+                    hover_html += "<td style='padding: 10px; border: 1px solid #444; background-color: #1a1a1a;'></td>"
+            hover_html += "</tr>"
+        hover_html += "</table><br>"
+    
+    hover_html += "</div>"
+    
+    # Display the interactive HTML
+    st.markdown(hover_html, unsafe_allow_html=True)
     
     return fig
 
