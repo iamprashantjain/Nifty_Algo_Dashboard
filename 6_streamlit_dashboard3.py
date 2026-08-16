@@ -2228,7 +2228,7 @@ def create_calendar_heatmap_plotly(fd):
                 y=-1.5,
                 text=f"{total_str}<br>W:{win_days} L:{loss_days} ({win_rate:.0f}%)",
                 showarrow=False,
-                font=dict(size=11, color='white'),
+                font=dict(size=16, color='white'),
                 row=row, col=col
             )
     
