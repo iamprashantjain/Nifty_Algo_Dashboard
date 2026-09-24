@@ -2072,201 +2072,98 @@ def monte_carlo_projection(trades, n_simulations=10000, n_future_trades=100):
     return {'median': median, 'optimistic': p95, 'pessimistic': p05, 'all_sims': sim_array}
 
 def create_calendar_heatmap_plotly(fd):
-    """Create a compact Zerodha-style monthly P&L calendar heatmap."""
+    """Create a clean, non-overlapping Zerodha-style monthly P&L calendar."""
     daily_pnl = fd.groupby('entry_date')['net_pnl'].sum().sort_index()
     if daily_pnl.empty:
         return None
 
     daily_pnl.index = pd.to_datetime(daily_pnl.index)
-
-    # Show every month covered by the selected date range so the calendar
-    # remains stable even when a month has no trades.
     first_month = daily_pnl.index.min().to_period('M')
     last_month = daily_pnl.index.max().to_period('M')
     months = pd.period_range(first_month, last_month, freq='M')
 
-    # Keep the compact 6-month-per-row layout used by the reference.
-    n_cols = 6
-    n_rows = max(1, int(np.ceil(len(months) / n_cols)))
-
-    # Symmetric scale around zero keeps gains/losses visually comparable.
     non_zero = daily_pnl[daily_pnl != 0]
     max_abs = float(max(abs(non_zero.min()), abs(non_zero.max()))) if not non_zero.empty else 1.0
     if max_abs == 0:
         max_abs = 1.0
 
-    # A compact, dark calendar canvas.
-    fig = make_subplots(
-        rows=n_rows,
-        cols=n_cols,
-        horizontal_spacing=0.018,
-        vertical_spacing=0.16,
-        specs=[[{'type': 'heatmap'} for _ in range(n_cols)] for _ in range(n_rows)]
-    )
+    def cell_style(pnl):
+        if pnl > 0:
+            intensity = min(abs(pnl) / max_abs, 1.0)
+            shade = int(45 + 55 * intensity)
+            return f"background: rgb(38,{shade},{55 + int(35 * intensity)});"
+        if pnl < 0:
+            intensity = min(abs(pnl) / max_abs, 1.0)
+            shade = int(45 + 50 * intensity)
+            return f"background: rgb({shade},45,48);"
+        return "background: #202020;"
 
-    colorscale = [
-        [0.00, '#8B0000'],
-        [0.22, '#C94B4B'],
-        [0.46, '#6A3A3A'],
-        [0.50, '#242424'],
-        [0.54, '#365C3A'],
-        [0.78, '#4CAF50'],
-        [1.00, '#1B8F3A']
-    ]
+    def format_pnl(pnl):
+        if pnl > 0:
+            return f"+₹{pnl:,.0f}"
+        if pnl < 0:
+            return f"-₹{abs(pnl):,.0f}"
+        return "No trades"
 
-    for idx, period in enumerate(months):
-        row = idx // n_cols + 1
-        col = idx % n_cols + 1
+    cards = []
+    for period in months:
         year, month = period.year, period.month
+        month_start = pd.Timestamp(year, month, 1)
+        month_end = month_start + pd.offsets.MonthEnd(1)
+        month_dates = pd.date_range(month_start, month_end, freq='D')
+        month_total = float(sum(float(daily_pnl.get(d, 0.0)) for d in month_dates))
 
-        cal = calendar.Calendar(firstweekday=6).monthdayscalendar(year, month)  # Sunday first
-        n_weeks = len(cal)
-
-        z = []
-        text = []
-        hover = []
-
-        for week in cal:
-            z_row, text_row, hover_row = [], [], []
-            for day in week:
-                if day == 0:
-                    z_row.append(None)
-                    text_row.append('')
-                    hover_row.append('')
-                    continue
-
-                date_obj = pd.Timestamp(year, month, day)
-                pnl = float(daily_pnl.get(date_obj, 0.0))
-                z_row.append(pnl if pnl != 0 else 0)
-                text_row.append(str(day))
-
-                if pnl > 0:
-                    pnl_text = f"+₹{pnl:,.0f}"
-                elif pnl < 0:
-                    pnl_text = f"-₹{abs(pnl):,.0f}"
-                else:
-                    pnl_text = "No trades"
-                hover_row.append(
-                    f"📅 {date_obj.strftime('%d %b %Y')}<br>💰 P&L: {pnl_text}"
-                )
-
-            z.append(z_row)
-            text.append(text_row)
-            hover.append(hover_row)
-
-        fig.add_trace(
-            go.Heatmap(
-                z=z,
-                x=list(range(7)),
-                y=list(range(n_weeks)),
-                text=text,
-                texttemplate='%{text}',
-                textfont=dict(size=11, color='#D8D8D8'),
-                customdata=hover,
-                hovertemplate='%{customdata}<extra></extra>',
-                zmin=-max_abs,
-                zmax=max_abs,
-                colorscale=colorscale,
-                showscale=False,
-                xgap=3,
-                ygap=3,
-                zsmooth=False,
-                hoverongaps=False,
-                name=''
-            ),
-            row=row,
-            col=col
-        )
-
-        # Weekday header: S M T W T F S, matching the reference.
-        fig.update_xaxes(
-            row=row,
-            col=col,
-            range=[-0.5, 6.5],
-            tickmode='array',
-            tickvals=list(range(7)),
-            ticktext=['S', 'M', 'T', 'W', 'T', 'F', 'S'],
-            side='top',
-            tickfont=dict(size=10, color='#777777'),
-            showgrid=False,
-            zeroline=False,
-            fixedrange=True,
-            showline=False,
-            ticks=''
-        )
-        fig.update_yaxes(
-            row=row,
-            col=col,
-            range=[n_weeks - 0.5, -0.5],
-            showticklabels=False,
-            showgrid=False,
-            zeroline=False,
-            fixedrange=True,
-            showline=False,
-            ticks=''
-        )
-
-        # Monthly P&L displayed beside the month title, like the reference.
-        month_dates = pd.date_range(period.start_time, period.end_time, freq='D')
-        month_values = [float(daily_pnl.get(d, 0.0)) for d in month_dates]
-        month_total = sum(month_values)
-        month_label = f"{calendar.month_abbr[month]} {year}"
         if month_total > 0:
             total_label = f"+₹{month_total/1000:.2f}K" if abs(month_total) >= 1000 else f"+₹{month_total:,.0f}"
-            total_color = '#35C759'
+            total_color = '#45C76F'
         elif month_total < 0:
             total_label = f"-₹{abs(month_total)/1000:.2f}K" if abs(month_total) >= 1000 else f"-₹{abs(month_total):,.0f}"
-            total_color = '#FF5C5C'
+            total_color = '#FF5F63'
         else:
             total_label = '₹0'
             total_color = '#777777'
 
-        # Annotation coordinates are local to each subplot.
-        fig.add_annotation(
-            x=0,
-            y=1.33,
-            xref=f'x{idx + 1}' if idx + 1 > 1 else 'x',
-            yref=f'y{idx + 1}' if idx + 1 > 1 else 'y',
-            text=f"<b>{month_label}</b>",
-            showarrow=False,
-            xanchor='left',
-            yanchor='middle',
-            font=dict(size=13, color='#C8C8C8')
-        )
-        fig.add_annotation(
-            x=6,
-            y=1.33,
-            xref=f'x{idx + 1}' if idx + 1 > 1 else 'x',
-            yref=f'y{idx + 1}' if idx + 1 > 1 else 'y',
-            text=f"<b>{total_label}</b>",
-            showarrow=False,
-            xanchor='right',
-            yanchor='middle',
-            font=dict(size=12, color=total_color)
+        weeks = calendar.Calendar(firstweekday=6).monthdayscalendar(year, month)
+        cells = []
+        for week in weeks:
+            for day in week:
+                if day == 0:
+                    cells.append('<div class="pnl-day empty"></div>')
+                    continue
+                date_obj = pd.Timestamp(year, month, day)
+                pnl = float(daily_pnl.get(date_obj, 0.0))
+                pnl_text = format_pnl(pnl)
+                style = cell_style(pnl)
+                cells.append(
+                    f'<div class="pnl-day" style="{style}" title="{date_obj.strftime("%d %b %Y")} — {pnl_text}">'
+                    f'<span>{day}</span></div>'
+                )
+
+        cards.append(
+            f'<div class="pnl-month">'
+            f'<div class="pnl-month-title"><span>{calendar.month_abbr[month]} {year}</span>'
+            f'<span style="color:{total_color};">{total_label}</span></div>'
+            f'<div class="pnl-weekdays"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>'
+            f'<div class="pnl-grid">{"".join(cells)}</div></div>'
         )
 
-    # Hide unused subplot slots.
-    for idx in range(len(months), n_rows * n_cols):
-        row = idx // n_cols + 1
-        col = idx % n_cols + 1
-        fig.update_xaxes(visible=False, row=row, col=col)
-        fig.update_yaxes(visible=False, row=row, col=col)
-
-    fig.update_layout(
-        height=205 * n_rows,
-        margin=dict(l=18, r=18, t=18, b=18),
-        plot_bgcolor='#111111',
-        paper_bgcolor='#111111',
-        font=dict(color='#C8C8C8'),
-        showlegend=False,
-        hoverlabel=dict(
-            bgcolor='#1A1A1A',
-            bordercolor='#444444',
-            font=dict(color='white', size=12)
-        )
-    )
-
-    return fig
+    html = f"""
+    <style>
+        .pnl-calendar-wrap {{ background:#111111; border-radius:8px; padding:12px 10px 14px; width:100%; box-sizing:border-box; overflow-x:auto; }}
+        .pnl-calendar {{ display:grid; grid-template-columns:repeat(3,minmax(220px,1fr)); gap:26px 28px; min-width:700px; }}
+        .pnl-month {{ min-width:0; }}
+        .pnl-month-title {{ height:24px; display:flex; align-items:center; justify-content:space-between; color:#c8c8c8; font-size:15px; font-weight:600; margin-bottom:5px; padding:0 2px; white-space:nowrap; }}
+        .pnl-weekdays,.pnl-grid {{ display:grid; grid-template-columns:repeat(7,minmax(0,1fr)); gap:3px; }}
+        .pnl-weekdays {{ color:#707070; font-size:10px; text-align:center; margin-bottom:3px; }}
+        .pnl-day {{ height:28px; min-width:0; border-radius:3px; display:flex; align-items:center; justify-content:center; color:#dddddd; font-size:11px; line-height:1; cursor:default; box-sizing:border-box; }}
+        .pnl-day.empty {{ background:transparent !important; }}
+        .pnl-day:hover {{ outline:1px solid #aaaaaa; outline-offset:1px; }}
+        @media (max-width:1100px) {{ .pnl-calendar {{ grid-template-columns:repeat(2,minmax(220px,1fr)); }} }}
+        @media (max-width:700px) {{ .pnl-calendar {{ grid-template-columns:minmax(220px,1fr); }} }}
+    </style>
+    <div class="pnl-calendar-wrap"><div class="pnl-calendar">{''.join(cards)}</div></div>
+    """
+    return html
 
 # Load data
 def read_db_directly():
@@ -2542,9 +2439,9 @@ st.dataframe(tax_breakdown, hide_index=True, use_container_width=True)
 # MONTHLY P&L CALENDAR HEATMAP (COLLAPSIBLE)
 # ============================================
 with st.expander("📅 Monthly P&L Calendar Heatmap (Click to expand)", expanded=False):
-    fig = create_calendar_heatmap_plotly(fd)
-    if fig:
-        st.plotly_chart(fig, use_container_width=True)
+    calendar_html = create_calendar_heatmap_plotly(fd)
+    if calendar_html:
+        st.markdown(calendar_html, unsafe_allow_html=True)
     else:
         st.info("Not enough data to generate calendar heatmap")
 
